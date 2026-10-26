@@ -1,0 +1,53 @@
+name: CI-CD
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+permissions:
+  id-token: write   # OIDC to AWS (no long-lived keys)
+  contents: read
+
+env:
+  AWS_REGION: ap-south-1
+  S3_BUCKET: your-artifact-bucket
+  CD_APP: marriageapp
+  CD_GROUP: marriageapp-prod
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '11', cache: maven }
+      - run: mvn -B clean package
+      - name: Create CodeDeploy bundle
+        run: |
+          mkdir -p deploy
+          cp target/MarriageApp.war appspec.yml deploy/
+          cp -r scripts deploy/
+          cd deploy && zip -r ../marriageapp-${{ github.sha }}.zip .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundle
+          path: marriageapp-${{ github.sha }}.zip
+
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: bundle }
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Upload & deploy
+        run: |
+          aws s3 cp marriageapp-${{ github.sha }}.zip s3://$S3_BUCKET/marriageapp/
+          aws deploy create-deployment \
+            --application-name $CD_APP --deployment-group-name $CD_GROUP \
+            --s3-location bucket=$S3_BUCKET,key=marriageapp/marriageapp-${{ github.sha }}.zip,bundleType=zip

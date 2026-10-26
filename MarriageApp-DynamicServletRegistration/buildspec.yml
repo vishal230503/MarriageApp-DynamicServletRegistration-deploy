@@ -1,0 +1,22 @@
+version: 0.2
+# CodeBuild -> produces a CodeDeploy bundle (WAR + appspec + scripts)
+phases:
+  install:
+    runtime-versions:
+      java: corretto11
+  build:
+    commands:
+      - mvn -B clean package
+  post_build:
+    commands:
+      - mkdir -p deploy
+      - cp target/MarriageApp.war deploy/
+      - cp appspec.yml deploy/
+      - cp -r scripts deploy/
+artifacts:
+  base-directory: deploy
+  files:
+    - '**/*'
+cache:
+  paths:
+    - '/root/.m2/**/*'

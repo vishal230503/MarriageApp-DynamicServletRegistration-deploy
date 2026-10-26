@@ -1,0 +1,39 @@
+pipeline {
+  agent any
+  tools { maven 'Maven3'; jdk 'JDK11' }   // names from Jenkins Global Tool Configuration
+  environment {
+    AWS_REGION  = 'ap-south-1'
+    S3_BUCKET   = 'your-artifact-bucket'
+    CD_APP      = 'marriageapp'
+    CD_GROUP    = 'marriageapp-prod'
+  }
+  stages {
+    stage('Checkout') { steps { checkout scm } }
+    stage('Build & Test') { steps { sh 'mvn -B clean package' } }
+    stage('Bundle') {
+      steps {
+        sh '''
+          rm -rf deploy && mkdir -p deploy
+          cp target/MarriageApp.war appspec.yml deploy/
+          cp -r scripts deploy/
+          cd deploy && zip -r ../marriageapp-${BUILD_NUMBER}.zip .
+        '''
+        archiveArtifacts artifacts: 'target/*.war, marriageapp-*.zip', fingerprint: true
+      }
+    }
+    stage('Upload to S3') {
+      steps { sh 'aws s3 cp marriageapp-${BUILD_NUMBER}.zip s3://${S3_BUCKET}/marriageapp/ --region ${AWS_REGION}' }
+    }
+    stage('Deploy (CodeDeploy)') {
+      when { branch 'main' }
+      steps {
+        sh '''
+          aws deploy create-deployment --region ${AWS_REGION} \
+            --application-name ${CD_APP} --deployment-group-name ${CD_GROUP} \
+            --s3-location bucket=${S3_BUCKET},key=marriageapp/marriageapp-${BUILD_NUMBER}.zip,bundleType=zip
+        '''
+      }
+    }
+  }
+  post { always { cleanWs() } }
+}

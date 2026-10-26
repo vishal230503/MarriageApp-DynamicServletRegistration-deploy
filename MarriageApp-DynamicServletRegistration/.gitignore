@@ -1,0 +1,12 @@
+target/
+build/
+.settings/
+.classpath
+.project
+*.class
+*.war
+*.rar
+.idea/
+*.iml
+.DS_Store
+deploy/
